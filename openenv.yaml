@@ -1,0 +1,19 @@
+spec_version: 1
+name: idor_hunt_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+tasks:
+  - id: idor_easy
+    name: "Direct IDOR"
+    description: "Access admin user's confidential data by exploiting missing authorization on user profile endpoint"
+    difficulty: easy
+    max_steps: 10
+
+  - id: idor_medium
+    name: "Notes IDOR"
+    description: "Access other users' private notes by exploiting missing ownership check on notes endpoint"
+    difficulty: medium
+    max_steps: 15
