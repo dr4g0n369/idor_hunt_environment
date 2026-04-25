@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Announcements{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Announcements{% endblock %}
+{% block page_title %}Company Announcements{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">Announcements are visible to all employees. These are company-wide communications.</div>
+
+{% for ann in announcements %}
+<div class="card">
+    <h2>
+        <a href="/announcements/{{ ann.id }}" style="color: #1a1a2e;">{{ ann.title }}</a>
+        {% if ann.pinned %}<span class="pinned-tag">Pinned</span>{% endif %}
+    </h2>
+    <p style="color: #666; font-size: 13px; margin-bottom: 12px;">
+        Posted by <strong>{{ ann.author }}</strong> on {{ ann.published_at }}
+    </p>
+    <p style="color: #444; line-height: 1.6;">{{ ann.content[:200] }}{% if ann.content|length > 200 %}...{% endif %}</p>
+    <a href="/announcements/{{ ann.id }}" style="font-size: 13px; margin-top: 8px; display: inline-block;">Read more</a>
+</div>
+{% endfor %}
+
+{% if not announcements %}
+<div class="card">
+    <div class="empty-state"><p>No announcements at this time.</p></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ item.name }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/catalog">Catalog</a> / {{ item.name }}{% endblock %}
+{% block page_title %}{{ item.name }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Item Details</h2>
+    <dl class="detail-grid">
+        <dt>Item ID</dt><dd>#{{ item.id }}</dd>
+        <dt>Name</dt><dd>{{ item.name }}</dd>
+        <dt>Category</dt><dd>{{ item.category }}</dd>
+        <dt>Description</dt><dd>{{ item.description }}</dd>
+        <dt>Price</dt><dd><strong style="font-size: 18px;">${{ "%.2f" | format(item.price) }}</strong></dd>
+        <dt>Availability</dt>
+        <dd>
+            {% if item.in_stock %}
+                <span class="badge badge-in-stock">In Stock</span>
+            {% else %}
+                <span class="badge badge-out-of-stock">Out of Stock</span>
+            {% endif %}
+        </dd>
+    </dl>
+</div>
+
+<a href="/catalog" class="btn btn-primary">Back to Catalog</a>
+{% endblock %}

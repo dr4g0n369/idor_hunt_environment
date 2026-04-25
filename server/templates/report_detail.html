@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ report.title }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/reports">Reports</a> / {{ report.title }}{% endblock %}
+{% block page_title %}{{ report.title }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Report Information</h2>
+    <dl class="detail-grid">
+        <dt>Report ID</dt><dd>#{{ report.id }}</dd>
+        <dt>Title</dt><dd>{{ report.title }}</dd>
+        <dt>Created By (User ID)</dt><dd>{{ report.created_by }}</dd>
+        <dt>Visibility</dt><dd><span class="badge badge-{{ report.visibility }}">{{ report.visibility | title }}</span></dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Report Content</h2>
+    <p style="line-height: 1.7; color: #444;">{{ report.content }}</p>
+</div>
+
+<a href="/reports" class="btn btn-primary">Back to Reports</a>
+{% endblock %}

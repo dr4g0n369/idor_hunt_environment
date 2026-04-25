@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ file.filename }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/shared">Shared Files</a> / {{ file.filename }}{% endblock %}
+{% block page_title %}{{ file.filename }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>File Information</h2>
+    <dl class="detail-grid">
+        <dt>File ID</dt><dd>#{{ file.id }}</dd>
+        <dt>Filename</dt><dd>{{ file.filename }}</dd>
+        <dt>Description</dt><dd>{{ file.description }}</dd>
+        <dt>Shared With</dt><dd><span class="badge badge-{{ file.shared_with }}">{{ file.shared_with | title }}</span></dd>
+        <dt>Uploaded By</dt><dd>{{ file.uploader }} (User #{{ file.uploaded_by }})</dd>
+        <dt>Upload Date</dt><dd>{{ file.uploaded_at }}</dd>
+    </dl>
+</div>
+
+<a href="/shared" class="btn btn-primary">Back to Shared Files</a>
+{% endblock %}

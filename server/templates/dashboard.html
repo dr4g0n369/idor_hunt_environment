@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="card-grid">
+    <div class="stat-card">
+        <div class="stat-label">My Orders</div>
+        <div class="stat-value">{{ orders | length }}</div>
+        <div class="stat-sub"><a href="/orders">View all orders</a></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">My Documents</div>
+        <div class="stat-value">{{ documents | length }}</div>
+        <div class="stat-sub"><a href="/documents">View all documents</a></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Reports Available</div>
+        <div class="stat-value">{{ reports | length }}</div>
+        <div class="stat-sub"><a href="/reports">View reports</a></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Team Members</div>
+        <div class="stat-value">{{ users | length }}</div>
+        <div class="stat-sub"><a href="/users">User directory</a></div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <div class="card">
+        <h2>Recent Orders</h2>
+        {% if orders %}
+        <table>
+            <thead><tr><th>ID</th><th>Product</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for order in orders[:5] %}
+                <tr>
+                    <td><a href="/orders/{{ order.id }}">#{{ order.id }}</a></td>
+                    <td>{{ order.product }}</td>
+                    <td>${{ "%.2f" | format(order.amount) }}</td>
+                    <td><span class="badge badge-{{ order.status }}">{{ order.status | title }}</span></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state"><p>No orders found</p></div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>My Documents</h2>
+        {% if documents %}
+        <table>
+            <thead><tr><th>ID</th><th>Title</th><th>Classification</th></tr></thead>
+            <tbody>
+            {% for doc in documents[:5] %}
+                <tr>
+                    <td><a href="/documents/{{ doc.id }}">#{{ doc.id }}</a></td>
+                    <td>{{ doc.title }}</td>
+                    <td><span class="badge badge-{{ doc.classification }}">{{ doc.classification | title }}</span></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state"><p>No documents found</p></div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card" style="margin-top: 0;">
+    <h2>Your Profile</h2>
+    <dl class="detail-grid">
+        <dt>Username</dt><dd>{{ current_user.username }}</dd>
+        <dt>Role</dt><dd><span class="badge badge-{{ current_user.role }}">{{ current_user.role | title }}</span></dd>
+        <dt>Department</dt><dd>{{ current_user.department }}</dd>
+        <dt>User ID</dt><dd>{{ current_user.id }}</dd>
+    </dl>
+</div>
+{% endblock %}

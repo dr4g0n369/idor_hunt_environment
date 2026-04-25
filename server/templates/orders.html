@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Orders{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Orders{% endblock %}
+{% block page_title %}My Orders{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Order History ({{ orders | length }})</h2>
+    {% if orders %}
+    <table>
+        <thead>
+            <tr>
+                <th>Order ID</th>
+                <th>Product</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for order in orders %}
+            <tr>
+                <td><strong>#{{ order.id }}</strong></td>
+                <td>{{ order.product }}</td>
+                <td>${{ "%.2f" | format(order.amount) }}</td>
+                <td><span class="badge badge-{{ order.status }}">{{ order.status | title }}</span></td>
+                <td><a href="/orders/{{ order.id }}" class="btn btn-primary btn-sm">View Details</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>You have no orders yet.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

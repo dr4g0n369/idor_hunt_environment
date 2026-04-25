@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ announcement.title }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/announcements">Announcements</a> / {{ announcement.title }}{% endblock %}
+{% block page_title %}{{ announcement.title }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Announcement Details</h2>
+    <dl class="detail-grid">
+        <dt>Announcement ID</dt><dd>#{{ announcement.id }}</dd>
+        <dt>Posted By</dt><dd>{{ announcement.author }} (User #{{ announcement.author_id }})</dd>
+        <dt>Published</dt><dd>{{ announcement.published_at }}</dd>
+        <dt>Pinned</dt><dd>{% if announcement.pinned %}Yes{% else %}No{% endif %}</dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Content</h2>
+    <p style="line-height: 1.7; color: #444;">{{ announcement.content }}</p>
+</div>
+
+<a href="/announcements" class="btn btn-primary">Back to Announcements</a>
+{% endblock %}

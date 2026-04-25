@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — CorpSuite Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-container { width: 100%; max-width: 420px; padding: 20px; }
+        .login-brand { text-align: center; margin-bottom: 32px; color: #fff; }
+        .login-brand h1 { font-size: 32px; font-weight: 700; letter-spacing: 0.5px; }
+        .login-brand h1 span { color: #60a5fa; }
+        .login-brand p { color: #94a3b8; font-size: 14px; margin-top: 6px; }
+        .login-card { background: #fff; border-radius: 12px; padding: 36px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .login-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 6px; color: #1a1a2e; }
+        .login-card .subtitle { font-size: 14px; color: #888; margin-bottom: 24px; }
+        .form-group { margin-bottom: 18px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; color: #555; margin-bottom: 6px; }
+        .form-group select, .form-group input { width: 100%; padding: 10px 14px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 14px; color: #1a1a2e; background: #fff; outline: none; transition: border-color 0.15s; }
+        .form-group select:focus, .form-group input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .btn-login { width: 100%; padding: 12px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+        .btn-login:hover { background: #1d4ed8; }
+        .divider { display: flex; align-items: center; margin: 20px 0; color: #bbb; font-size: 12px; }
+        .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #e0e0e0; }
+        .divider span { padding: 0 12px; }
+        .quick-login { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .quick-btn { padding: 10px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; cursor: pointer; text-align: center; font-size: 13px; color: #555; transition: all 0.15s; }
+        .quick-btn:hover { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
+        .quick-btn .qb-name { font-weight: 600; color: #1a1a2e; }
+        .quick-btn .qb-role { font-size: 11px; color: #888; }
+        .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .footer { text-align: center; margin-top: 24px; color: #64748b; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-brand">
+            <h1>Corp<span>Suite</span></h1>
+            <p>Internal Corporate Portal v2.1.0</p>
+        </div>
+        <div class="login-card">
+            <h2>Welcome back</h2>
+            <p class="subtitle">Sign in to access the corporate portal</p>
+
+            {% if error %}
+                <div class="alert">{{ error }}</div>
+            {% endif %}
+
+            <form method="POST" action="/login">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter your username" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="token">Access Token</label>
+                    <input type="password" id="token" name="token" placeholder="Enter your access token">
+                </div>
+                <button type="submit" class="btn-login">Sign In</button>
+            </form>
+
+            <div class="divider"><span>or quick access</span></div>
+
+            <div class="quick-login">
+                <form method="POST" action="/login" style="display:contents">
+                    <input type="hidden" name="username" value="alice">
+                    <input type="hidden" name="token" value="tok_alice_j3p">
+                    <button type="submit" class="quick-btn"><div class="qb-name">Alice</div><div class="qb-role">User · Engineering</div></button>
+                </form>
+                <form method="POST" action="/login" style="display:contents">
+                    <input type="hidden" name="username" value="bob">
+                    <input type="hidden" name="token" value="tok_bob_m2q">
+                    <button type="submit" class="quick-btn"><div class="qb-name">Bob</div><div class="qb-role">User · Sales</div></button>
+                </form>
+                <form method="POST" action="/login" style="display:contents">
+                    <input type="hidden" name="username" value="manager1">
+                    <input type="hidden" name="token" value="tok_mgr_k9m">
+                    <button type="submit" class="quick-btn"><div class="qb-name">Manager1</div><div class="qb-role">Manager · Eng</div></button>
+                </form>
+                <form method="POST" action="/login" style="display:contents">
+                    <input type="hidden" name="username" value="guest">
+                    <input type="hidden" name="token" value="tok_guest_q1r">
+                    <button type="submit" class="quick-btn"><div class="qb-name">Guest</div><div class="qb-role">Guest · External</div></button>
+                </form>
+            </div>
+        </div>
+        <div class="footer">CorpSuite Portal &copy; 2024 — Internal Use Only</div>
+    </div>
+</body>
+</html>

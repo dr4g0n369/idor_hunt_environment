@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ document.title }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/documents">Documents</a> / {{ document.title }}{% endblock %}
+{% block page_title %}{{ document.title }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Document Information</h2>
+    <dl class="detail-grid">
+        <dt>Document ID</dt><dd>#{{ document.id }}</dd>
+        <dt>Title</dt><dd>{{ document.title }}</dd>
+        <dt>Classification</dt><dd><span class="badge badge-{{ document.classification }}">{{ document.classification | title }}</span></dd>
+        <dt>Owner User ID</dt><dd>{{ document.user_id }}</dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Content</h2>
+    <p style="line-height: 1.7; color: #444;">{{ document.content }}</p>
+</div>
+
+<a href="/documents" class="btn btn-primary">Back to Documents</a>
+{% endblock %}

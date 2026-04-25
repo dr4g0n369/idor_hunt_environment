@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.id }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/tickets">Tickets</a> / #{{ ticket.id }}{% endblock %}
+{% block page_title %}{{ ticket.subject }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Ticket Information</h2>
+    <dl class="detail-grid">
+        <dt>Ticket ID</dt><dd>#{{ ticket.id }}</dd>
+        <dt>Subject</dt><dd>{{ ticket.subject }}</dd>
+        <dt>Created By</dt><dd>{{ ticket.creator }} (User #{{ ticket.created_by }})</dd>
+        <dt>Status</dt><dd><span class="badge badge-{{ ticket.status }}">{{ ticket.status | replace('_', ' ') | title }}</span></dd>
+        <dt>Priority</dt><dd><span class="badge badge-{{ ticket.priority }}">{{ ticket.priority | title }}</span></dd>
+        <dt>Visibility</dt>
+        <dd>
+            {% if ticket.is_public %}
+                <span class="badge badge-public">Public</span>
+            {% else %}
+                <span class="badge badge-private">Private</span>
+            {% endif %}
+        </dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Description</h2>
+    <p style="line-height: 1.7; color: #444;">{{ ticket.description }}</p>
+</div>
+
+<a href="/tickets" class="btn btn-primary">Back to Tickets</a>
+{% endblock %}

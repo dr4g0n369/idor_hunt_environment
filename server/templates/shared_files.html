@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Shared Files{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Shared Files{% endblock %}
+{% block page_title %}Shared Files{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">Shared files are accessible based on their sharing scope. You can see files shared with "everyone" and files shared with your department.</div>
+
+<div class="card">
+    <h2>Available Files ({{ files | length }})</h2>
+    {% if files %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Filename</th>
+                <th>Description</th>
+                <th>Shared With</th>
+                <th>Uploaded By</th>
+                <th>Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for file in files %}
+            <tr>
+                <td>#{{ file.id }}</td>
+                <td><strong>{{ file.filename }}</strong></td>
+                <td style="max-width: 250px;">{{ file.description[:80] }}{% if file.description|length > 80 %}...{% endif %}</td>
+                <td><span class="badge badge-{{ file.shared_with }}">{{ file.shared_with | title }}</span></td>
+                <td>{{ file.uploader }}</td>
+                <td>{{ file.uploaded_at }}</td>
+                <td><a href="/shared/{{ file.id }}" class="btn btn-primary btn-sm">View</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state"><p>No shared files available for your department.</p></div>
+    {% endif %}
+</div>
+{% endblock %}

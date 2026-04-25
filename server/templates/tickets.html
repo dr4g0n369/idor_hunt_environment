@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Support Tickets{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Tickets{% endblock %}
+{% block page_title %}Support Tickets{% endblock %}
+
+{% block content %}
+{% if my_private %}
+<div class="card">
+    <h2>My Private Tickets ({{ my_private | length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Subject</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Visibility</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for ticket in my_private %}
+            <tr>
+                <td>#{{ ticket.id }}</td>
+                <td><strong>{{ ticket.subject }}</strong></td>
+                <td><span class="badge badge-{{ ticket.status }}">{{ ticket.status | replace('_', ' ') | title }}</span></td>
+                <td><span class="badge badge-{{ ticket.priority }}">{{ ticket.priority | title }}</span></td>
+                <td><span class="badge badge-private">Private</span></td>
+                <td><a href="/tickets/{{ ticket.id }}" class="btn btn-primary btn-sm">View</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Public Tickets ({{ public_tickets | length }})</h2>
+    <div class="alert alert-info" style="margin-bottom: 16px;">Public tickets are visible to all employees for transparency. Private tickets are only visible to their creator.</div>
+    {% if public_tickets %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Subject</th>
+                <th>Created By</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for ticket in public_tickets %}
+            <tr>
+                <td>#{{ ticket.id }}</td>
+                <td><strong>{{ ticket.subject }}</strong></td>
+                <td>{{ ticket.creator }}</td>
+                <td><span class="badge badge-{{ ticket.status }}">{{ ticket.status | replace('_', ' ') | title }}</span></td>
+                <td><span class="badge badge-{{ ticket.priority }}">{{ ticket.priority | title }}</span></td>
+                <td><a href="/tickets/{{ ticket.id }}" class="btn btn-primary btn-sm">View</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state"><p>No public tickets.</p></div>
+    {% endif %}
+</div>
+{% endblock %}

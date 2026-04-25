@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Teams{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Teams{% endblock %}
+{% block page_title %}Department Teams{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">The team directory shows department structure and members. This is public organizational information available to all employees.</div>
+
+<div class="card-grid">
+{% for dept in departments %}
+    <div class="stat-card">
+        <div class="stat-label">Department</div>
+        <div class="stat-value" style="font-size: 20px;">{{ dept }}</div>
+        <div class="stat-sub"><a href="/teams/{{ dept }}">View team members</a></div>
+    </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Reports{% endblock %}
+{% block page_title %}Reports{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Available Reports ({{ reports | length }})</h2>
+    {% if reports %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Visibility</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for report in reports %}
+            <tr>
+                <td>#{{ report.id }}</td>
+                <td><strong>{{ report.title }}</strong></td>
+                <td><span class="badge badge-{{ report.visibility }}">{{ report.visibility | title }}</span></td>
+                <td><a href="/reports/{{ report.id }}" class="btn btn-primary btn-sm">View</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No reports available.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

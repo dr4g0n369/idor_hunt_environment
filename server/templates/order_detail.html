@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Order #{{ order.id }}{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/orders">Orders</a> / #{{ order.id }}{% endblock %}
+{% block page_title %}Order #{{ order.id }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Order Details</h2>
+    <dl class="detail-grid">
+        <dt>Order ID</dt><dd>#{{ order.id }}</dd>
+        <dt>Product</dt><dd>{{ order.product }}</dd>
+        <dt>Amount</dt><dd>${{ "%.2f" | format(order.amount) }}</dd>
+        <dt>Status</dt><dd><span class="badge badge-{{ order.status }}">{{ order.status | title }}</span></dd>
+        <dt>Shipping Address</dt><dd>{{ order.shipping_address }}</dd>
+        <dt>Owner User ID</dt><dd>{{ order.user_id }}</dd>
+    </dl>
+</div>
+<a href="/orders" class="btn btn-primary">Back to Orders</a>
+{% endblock %}

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CorpSuite{% endblock %} — CorpSuite Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; display: flex; min-height: 100vh; }
+        a { color: #2563eb; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .sidebar { width: 240px; background: #1a1a2e; color: #e0e0e0; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; }
+        .sidebar-brand { padding: 24px 20px; font-size: 20px; font-weight: 700; color: #fff; border-bottom: 1px solid #2a2a4a; letter-spacing: 0.5px; }
+        .sidebar-brand span { color: #60a5fa; }
+        .sidebar-nav { flex: 1; padding: 12px 0; }
+        .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: #a0a0c0; font-size: 14px; transition: all 0.15s; border-left: 3px solid transparent; }
+        .sidebar-nav a:hover, .sidebar-nav a.active { background: #2a2a4a; color: #fff; text-decoration: none; border-left-color: #60a5fa; }
+        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; }
+        .sidebar-nav .nav-section { padding: 16px 20px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #606080; }
+        .sidebar-user { padding: 16px 20px; border-top: 1px solid #2a2a4a; font-size: 13px; }
+        .sidebar-user .user-name { color: #fff; font-weight: 600; }
+        .sidebar-user .user-role { color: #808090; font-size: 12px; margin-top: 2px; }
+        .sidebar-user .logout-link { display: inline-block; margin-top: 8px; color: #f87171; font-size: 12px; }
+
+        .main { margin-left: 240px; flex: 1; min-height: 100vh; }
+        .topbar { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+        .topbar h1 { font-size: 20px; font-weight: 600; color: #1a1a2e; }
+        .topbar .breadcrumb { font-size: 13px; color: #888; }
+        .topbar .breadcrumb a { color: #888; }
+
+        .content { padding: 28px 32px; }
+
+        .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #1a1a2e; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-bottom: 20px; }
+
+        .stat-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 20px; }
+        .stat-card .stat-label { font-size: 13px; color: #888; margin-bottom: 4px; }
+        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+        .stat-card .stat-sub { font-size: 12px; color: #60a5fa; margin-top: 4px; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; border-bottom: 2px solid #e0e0e0; background: #fafafa; }
+        td { padding: 12px 14px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+        tr:hover td { background: #f8f9ff; }
+
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-admin { background: #fef2f2; color: #dc2626; }
+        .badge-manager { background: #fef3c7; color: #d97706; }
+        .badge-user { background: #dbeafe; color: #2563eb; }
+        .badge-guest { background: #f3f4f6; color: #6b7280; }
+        .badge-pending { background: #fef3c7; color: #d97706; }
+        .badge-shipped { background: #dbeafe; color: #2563eb; }
+        .badge-delivered { background: #d1fae5; color: #059669; }
+        .badge-processing { background: #ede9fe; color: #7c3aed; }
+        .badge-confidential { background: #fef2f2; color: #dc2626; }
+        .badge-internal { background: #dbeafe; color: #2563eb; }
+        .badge-managers { background: #fef3c7; color: #d97706; }
+        .badge-open { background: #dbeafe; color: #2563eb; }
+        .badge-in_progress { background: #fef3c7; color: #d97706; }
+        .badge-resolved { background: #d1fae5; color: #059669; }
+        .badge-closed { background: #f3f4f6; color: #6b7280; }
+        .badge-critical { background: #fef2f2; color: #dc2626; }
+        .badge-high { background: #fff7ed; color: #ea580c; }
+        .badge-medium { background: #fef3c7; color: #d97706; }
+        .badge-low { background: #f0fdf4; color: #16a34a; }
+        .badge-everyone { background: #dbeafe; color: #2563eb; }
+        .badge-engineering { background: #ede9fe; color: #7c3aed; }
+        .badge-sales { background: #fef3c7; color: #d97706; }
+        .badge-public { background: #d1fae5; color: #059669; }
+        .badge-private { background: #fef2f2; color: #dc2626; }
+        .badge-in-stock { background: #d1fae5; color: #059669; }
+        .badge-out-of-stock { background: #fef2f2; color: #dc2626; }
+        .pinned-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #fef3c7; color: #d97706; margin-left: 8px; }
+
+        .btn { display: inline-block; padding: 8px 18px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+        .btn-primary { background: #2563eb; color: #fff; }
+        .btn-primary:hover { background: #1d4ed8; text-decoration: none; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .btn-danger:hover { background: #b91c1c; text-decoration: none; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+        .detail-grid { display: grid; grid-template-columns: 160px 1fr; gap: 0; }
+        .detail-grid dt { padding: 10px 14px; font-size: 13px; color: #888; font-weight: 500; border-bottom: 1px solid #f0f0f0; }
+        .detail-grid dd { padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+
+        .alert { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+        .alert-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .alert-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+
+        .empty-state { text-align: center; padding: 48px 20px; color: #888; }
+        .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.4; }
+        .empty-state p { font-size: 15px; }
+
+        @media (max-width: 768px) {
+            .sidebar { width: 200px; }
+            .main { margin-left: 200px; }
+            .content { padding: 20px; }
+            .card-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-brand">Corp<span>Suite</span></div>
+        <div class="sidebar-nav">
+            <div class="nav-section">Main</div>
+            <a href="/dashboard" class="{% if active_page == 'dashboard' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Dashboard
+            </a>
+            <a href="/users" class="{% if active_page == 'users' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                User Directory
+            </a>
+
+            <div class="nav-section">Resources</div>
+            <a href="/orders" class="{% if active_page == 'orders' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+                Orders
+            </a>
+            <a href="/documents" class="{% if active_page == 'documents' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Documents
+            </a>
+            <a href="/shared" class="{% if active_page == 'shared' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                Shared Files
+            </a>
+            <a href="/reports" class="{% if active_page == 'reports' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                Reports
+            </a>
+            <a href="/catalog" class="{% if active_page == 'catalog' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a4 4 0 00-8 0v2"/></svg>
+                Catalog
+            </a>
+
+            <div class="nav-section">Company</div>
+            <a href="/announcements" class="{% if active_page == 'announcements' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                Announcements
+            </a>
+            <a href="/teams" class="{% if active_page == 'teams' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                Teams
+            </a>
+            <a href="/tickets" class="{% if active_page == 'tickets' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5h2a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+                Tickets
+            </a>
+            <a href="/activity" class="{% if active_page == 'activity' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Activity Log
+            </a>
+
+            <div class="nav-section">Administration</div>
+            <a href="/admin" class="{% if active_page == 'admin' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                Admin Panel
+            </a>
+        </div>
+        <div class="sidebar-user">
+            <div class="user-name">{{ current_user.username }}</div>
+            <div class="user-role">{{ current_user.role | title }} — {{ current_user.department }}</div>
+            <a href="/logout" class="logout-link">Sign out</a>
+        </div>
+    </nav>
+
+    <div class="main">
+        <div class="topbar">
+            <div>
+                <div class="breadcrumb">{% block breadcrumb %}CorpSuite{% endblock %}</div>
+                <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+            </div>
+        </div>
+        <div class="content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>

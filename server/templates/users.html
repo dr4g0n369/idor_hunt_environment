@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}User Directory{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / User Directory{% endblock %}
+{% block page_title %}User Directory{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>All Users ({{ users | length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Department</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td><strong>{{ user.username }}</strong></td>
+                <td><span class="badge badge-{{ user.role }}">{{ user.role | title }}</span></td>
+                <td>{{ user.department }}</td>
+                <td><a href="/users/{{ user.id }}" class="btn btn-primary btn-sm">View Profile</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

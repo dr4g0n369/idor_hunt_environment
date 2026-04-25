@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Procurement Catalog{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / Catalog{% endblock %}
+{% block page_title %}Procurement Catalog{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">Browse available equipment and supplies. All items are visible to employees for procurement requests. Contact your manager to place an order.</div>
+
+<div class="card">
+    <h2>All Items ({{ items | length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Availability</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for item in items %}
+            <tr>
+                <td>#{{ item.id }}</td>
+                <td><strong>{{ item.name }}</strong></td>
+                <td>{{ item.category }}</td>
+                <td>${{ "%.2f" | format(item.price) }}</td>
+                <td>
+                    {% if item.in_stock %}
+                        <span class="badge badge-in-stock">In Stock</span>
+                    {% else %}
+                        <span class="badge badge-out-of-stock">Out of Stock</span>
+                    {% endif %}
+                </td>
+                <td><a href="/catalog/{{ item.id }}" class="btn btn-primary btn-sm">Details</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

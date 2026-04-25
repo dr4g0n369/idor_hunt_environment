@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ department }} Team{% endblock %}
+{% block breadcrumb %}<a href="/dashboard">Home</a> / <a href="/teams">Teams</a> / {{ department }}{% endblock %}
+{% block page_title %}{{ department }} Team{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Team Members ({{ members | length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for member in members %}
+            <tr>
+                <td>{{ member.id }}</td>
+                <td><strong>{{ member.username }}</strong></td>
+                <td><span class="badge badge-{{ member.role }}">{{ member.role | title }}</span></td>
+                <td><a href="/users/{{ member.id }}" class="btn btn-primary btn-sm">View Profile</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<a href="/teams" class="btn btn-primary">Back to Teams</a>
+{% endblock %}
