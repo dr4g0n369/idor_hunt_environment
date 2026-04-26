@@ -31,10 +31,10 @@ That's exactly the kind of reasoning I wanted to train into a model, and exactly
 
 Before diving into decisions, here's the full pipeline — and how each step in the GRPO loop connects:
 
-![Training Pipeline](assets/training_pipeline.png)
+![Training Pipeline](https://raw.githubusercontent.com/dr4g0n369/idor_hunt_environment/main/assets/training_pipeline.png)
 *Figure 1: Full training pipeline — Qwen3-4B goes through SFT on expert demonstrations, then GRPO against a live Flask API with a Gemma 3 12B supervisor shaping the reward.*
 
-![GRPO Environment Loop](assets/grpo_loop.png)
+![GRPO Environment Loop](https://raw.githubusercontent.com/dr4g0n369/idor_hunt_environment/main/assets/grpo_loop.png)
 *Figure 2: Per-step GRPO loop — the model generates an HTTP request, it's parsed and executed against the real API, the deterministic reward is blended with the supervisor's strategy score, and a gradient update follows.*
 
 ---

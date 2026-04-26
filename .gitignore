@@ -208,3 +208,5 @@ __marimo__/
 scripts/
 *.db
 exploit.py
+assets/*.png
+assets/*.pdf
