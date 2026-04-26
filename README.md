@@ -2,7 +2,7 @@
 title: Idor Hunt Env Environment Server
 emoji: 🔓
 colorFrom: red
-colorTo: orange
+colorTo: red
 sdk: docker
 pinned: false
 app_port: 8000
