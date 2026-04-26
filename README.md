@@ -1,255 +1,209 @@
 ---
 title: Idor Hunt Env Environment Server
-emoji: 🎹
-colorFrom: purple
-colorTo: blue
+emoji: 🔓
+colorFrom: red
+colorTo: orange
 sdk: docker
 pinned: false
 app_port: 8000
 base_path: /web
 tags:
   - openenv
+  - security
+  - idor
+  - reinforcement-learning
 ---
 
-# Idor Hunt Env Environment
+# IdorHuntEnv — Teaching LLMs to Find Broken Access Control
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+> **Can we train a small LLM to autonomously discover IDOR and privilege escalation vulnerabilities in a corporate API?**
+
+[![HF Space](https://img.shields.io/badge/🤗%20Space-r4nd0m098%2Fidor--hunt--env-blue)](https://huggingface.co/spaces/r4nd0m098/idor-hunt-env)
+[![Model](https://img.shields.io/badge/🤗%20Model-r4nd0m098%2Fidor--hunt--qwen3--4b--grpo-green)](https://huggingface.co/r4nd0m098/idor-hunt-qwen3-4b-grpo)
+[![Blog](https://img.shields.io/badge/📝%20Blog-Read%20the%20Story-orange)](https://huggingface.co/blog/r4nd0m098/idor-hunt-llm-security-training)
+[![Notebook](https://img.shields.io/badge/📓%20Kaggle-Training%20Notebook-teal)](https://www.kaggle.com/code/r4nd0m098/idor-hunt-sft-grpo-training)
+
+---
+
+## The Problem
+
+Web security testing — specifically **Broken Access Control** — is one of the most prevalent and damaging vulnerability classes. It sits at #1 on the OWASP Top 10. Yet it requires exactly the kind of multi-step, context-aware reasoning that LLMs are theoretically good at:
+
+- Understand what API endpoints exist
+- Know which accounts have which privilege levels
+- Form hypotheses about what access *should* be restricted
+- Send targeted HTTP requests to test those hypotheses
+- Interpret responses to confirm or deny findings
+
+No benchmark exists for this. No RL environment trains on it. We built one.
+
+---
+
+## The Environment
+
+**IdorHuntEnv** is a live Flask corporate API running inside the environment process, with three intentional broken access control vulnerabilities:
+
+| Vulnerability | Type | Endpoint |
+|---|---|---|
+| Cross-user order access | Horizontal IDOR | `GET /api/orders/<id>` |
+| Reports accessible to regular users | Vertical Privesc | `GET /api/reports` |
+| Admin config accessible to non-admins | Vertical Privesc | `GET /api/admin/config` |
+
+The agent has four test accounts (`alice` user, `bob` user, `manager1` manager, `guest` guest) and 22 API endpoints to explore. The challenge includes **deliberate false positives** — public endpoints like `/api/announcements`, `/api/catalog`, and `/api/teams` that return 200 but are *not* vulnerabilities.
+
+### Three Tasks
+
+| Task | Description | Max Steps | Difficulty |
+|---|---|---|---|
+| `idor_horizontal` | Find cross-user data access on orders | 15 | Easy |
+| `privesc` | Find endpoints accessible above privilege level | 20 | Medium |
+| `full_audit` | Find all three vulnerabilities | 30 | Hard |
+
+### Agent Interface
+
+Each turn the agent receives an HTTP response and outputs a single request line:
+
+```
+GET /api/orders/3 @alice
+POST /api/data {"key": "val"} @manager1
+```
+
+### Reward Signal
+
+The reward is **dense and shaped** — not just 0/1 at the end:
+
+```
++0.1   Enumerate users (reconnaissance)
++0.1   Access your own orders (baseline)
++0.5   Access another user's order (IDOR found!)
++1.0   Access admin's order as a regular user (high-severity IDOR)
++0.8   Access manager-only reports as a regular user (privesc)
++1.0   Access admin config as non-admin (critical privesc)
+-0.1   Repeated requests (wasted steps)
+-0.05  404 responses (wrong path)
+-0.5   Hitting step limit without solving task
+```
+
+A **hybrid reward** combines the deterministic environment signal with a Gemma 3 12B supervisor (LLM-as-a-judge) that evaluates strategy quality:
+
+```python
+if env_reward < 0:
+    final_reward = env_reward          # hard veto — ground truth wins
+else:
+    final_reward = env_reward * 0.7 + supervisor_score * 0.3
+```
+
+---
+
+## Training Approach
+
+We use a two-phase pipeline on **Qwen3-4B** with Unsloth 4-bit quantization:
+
+### Phase 1: SFT — Teaching HTTP Literacy
+
+76 hand-crafted expert demonstrations covering:
+- Reconnaissance patterns (list users → explore their data)
+- IDOR testing (enumerate IDs, try cross-account access)
+- Privilege escalation probing (access restricted endpoints as low-priv users)
+- False positive recognition (public endpoints → move on)
+- Error code interpretation (403 = protected, 404 = wrong ID)
+
+### Phase 2: GRPO — Reinforcement Against the Live Environment
+
+13 seeded starting states covering all three tasks at various stages of progress. The model generates 4 rollouts per state, executes them against the live Flask API, and receives shaped rewards.
+
+**Anti-reward-hacking safeguards:**
+1. Deterministic flag gating — supervisor cannot override a failed environment check
+2. State penalty for probing safe/public endpoints
+3. Penalty for repeated requests
+4. Parse failure penalty (−0.3) for malformed outputs
+
+---
+
+## Results
+
+Results from our smoke-test run (10 GRPO steps, 80 SFT steps, T4 GPU):
+
+| Task | Baseline | After SFT | After GRPO | Δ Total |
+|---|---|---|---|---|
+| Horizontal IDOR | 0.100 | 0.100 | 0.100 | +0.000 |
+| Privilege Escalation | 0.500 | 0.500 | 0.500 | +0.000 |
+| Full Audit | 0.100 | **0.400** | 0.400 | **+0.300** |
+
+**SFT alone gave a +0.3 jump on the hardest task.** The baseline model stumbled around, wasting all 30 steps testing irrelevant endpoints. After SFT, it immediately targeted `/api/admin/config` and `/api/reports` — demonstrating that the expert demonstrations successfully transferred HTTP security testing methodology.
+
+GRPO with only 10 steps didn't move the needle (expected — that's a smoke test). A full 300-step run with the supervisor enabled is in progress; results will be updated here.
+
+> **Training plots and full run logs:** see the [Kaggle notebook](https://www.kaggle.com/code/r4nd0m098/idor-hunt-sft-grpo-training)
+
+---
+
+## Why This Matters
+
+Broken access control vulnerabilities are:
+- **#1 on OWASP Top 10** by prevalence
+- **Frequently missed** by automated scanners (logic bugs, not injection)
+- **Expensive to find manually** — requires understanding the application's authorization model
+
+A trained LLM agent that reliably discovers IDOR and privilege escalation would be a meaningful contribution to the security tooling ecosystem — and this environment is the first step toward training one.
+
+---
 
 ## Quick Start
 
-The simplest way to use the Idor Hunt Env environment is through the `IdorHuntEnv` class:
-
 ```python
-from idor_hunt_env import IdorHuntAction, IdorHuntEnv
+from server.idor_hunt_env_environment import IdorHuntEnvironment
 
-try:
-    # Create environment from Docker image
-    idor_hunt_envenv = IdorHuntEnv.from_docker_image("idor_hunt_env-env:latest")
+class Action:
+    def __init__(self, method, path, body=None, account="alice"):
+        self.method, self.path, self.body, self.account = method, path, body, account
 
-    # Reset
-    result = idor_hunt_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+env = IdorHuntEnvironment()
+obs = env.reset(task_id="idor_horizontal")
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
+obs = env.step(Action("GET", "/api/orders/3", account="alice"))
+print(f"Status: {obs.status_code}, Reward: {obs.reward}")
 
-    for msg in messages:
-        result = idor_hunt_envenv.step(IdorHuntAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    idor_hunt_envenv.close()
+print(f"Grade: {env.get_grade()}")
+env.close()
 ```
 
-That's it! The `IdorHuntEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
+---
 
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
+## Running the Training
 
 ```bash
-# From project root
-docker build -t idor_hunt_env-env:latest -f server/Dockerfile .
+# Kaggle notebook (recommended — handles GPU + unsloth)
+# Open training_kaggle.ipynb on Kaggle with T4/P100 GPU
+
+# Or via HF Jobs
+hf jobs uv run --flavor a100-large --timeout 6h training_kaggle.py
 ```
 
-## Deploying to Hugging Face Spaces
-
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
-
-```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
-```
-
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
-
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
-```
-
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**IdorHuntAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**IdorHuntObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Idor Hunt Env environment server running, you can connect directly:
-
-```python
-from idor_hunt_env import IdorHuntEnv
-
-# Connect to existing server
-idor_hunt_envenv = IdorHuntEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = idor_hunt_envenv.reset()
-result = idor_hunt_envenv.step(IdorHuntAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `idor_hunt_envenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from idor_hunt_env import IdorHuntAction, IdorHuntEnv
-
-# Connect with context manager (auto-connects and closes)
-with IdorHuntEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(IdorHuntAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    IdorHuntEnvironment,  # Pass class, not instance
-    IdorHuntAction,
-    IdorHuntObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from idor_hunt_env import IdorHuntAction, IdorHuntEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with IdorHuntEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(IdorHuntAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/idor_hunt_env_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
+---
 
 ## Project Structure
 
 ```
 idor_hunt_env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # IdorHuntEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── idor_hunt_env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
+├── server/
+│   ├── idor_hunt_env_environment.py  # Core environment + reward logic
+│   ├── target_app.py                 # Flask corporate API with intentional vulns
+│   └── app.py                        # OpenEnv FastAPI wrapper
+├── sft_data.py                       # 76 expert SFT demonstrations
+├── inject_supervisor.py              # Gemma 3 supervisor integration
+├── training_kaggle.ipynb             # Full training notebook
+├── training_kaggle.py                # HF Jobs training script
+└── openenv.yaml                      # Environment manifest
 ```
+
+---
+
+## Links
+
+| Resource | URL |
+|---|---|
+| 🤗 HF Space (live environment) | https://huggingface.co/spaces/r4nd0m098/idor-hunt-env |
+| 🤗 Trained model | https://huggingface.co/r4nd0m098/idor-hunt-qwen3-4b-grpo |
+| 📝 Blog post | https://huggingface.co/blog/r4nd0m098/idor-hunt-llm-security-training |
+| 📓 Training notebook (Kaggle) | https://www.kaggle.com/code/r4nd0m098/idor-hunt-sft-grpo-training |
