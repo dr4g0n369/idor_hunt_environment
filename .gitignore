@@ -210,3 +210,4 @@ scripts/
 exploit.py
 assets/*.png
 assets/*.pdf
+tmp/

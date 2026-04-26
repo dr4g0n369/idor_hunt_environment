@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FreelanceHub — AI Security Audit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<div class="scanline"></div>
+
+<header>
+  <div class="header-left">
+    <div class="logo">
+      <span class="logo-icon">⬡</span>
+      <span class="logo-text">FreelanceHub</span>
+      <span class="logo-badge">v3.0.0</span>
+    </div>
+  </div>
+  <div class="header-center">
+    <div class="status-pill" id="status-pill">
+      <span class="pulse"></span>
+      <span id="status-text">Awaiting Agent</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="stat-chip"><span class="chip-label">Requests</span><span class="chip-value" id="req-count">0</span></div>
+    <div class="stat-chip"><span class="chip-label">Bugs Found</span><span class="chip-value red" id="bug-count">0</span></div>
+    <div class="stat-chip"><span class="chip-label">F1 Score</span><span class="chip-value green" id="f1-score">—</span></div>
+  </div>
+</header>
+
+<main>
+
+  <aside class="panel panel-left">
+    <div class="panel-header">
+      <span class="panel-title">Target Surface</span>
+      <span class="panel-subtitle">FreelanceHub API Endpoints</span>
+    </div>
+    <div class="endpoint-list" id="endpoint-list">
+      <div class="ep-group-label">Public</div>
+      <div class="endpoint-item fp" data-path="/api/skills">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/skills</span>
+        <span class="ep-badge fp-badge">Safe</span>
+      </div>
+      <div class="endpoint-item fp" data-path="/api/browse/projects">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/browse/projects</span>
+        <span class="ep-badge fp-badge">Safe</span>
+      </div>
+
+      <div class="ep-group-label">Authenticated</div>
+      <div class="endpoint-item fp" data-path="/api/platform/stats">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/platform/stats</span>
+        <span class="ep-badge fp-badge">Safe</span>
+      </div>
+      <div class="endpoint-item" data-path="/api/me">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/me</span>
+        <span class="ep-badge">Auth</span>
+      </div>
+      <div class="endpoint-item vuln" data-bug="idor_contractor_profile" data-path="/api/contractors/{id}">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/contractors/&#123;id&#125;</span>
+        <span class="ep-badge vuln-badge">IDOR</span>
+      </div>
+      <div class="endpoint-item vuln" data-bug="idor_project_brief" data-path="/api/projects/{id}">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/projects/&#123;id&#125;</span>
+        <span class="ep-badge vuln-badge">IDOR</span>
+      </div>
+      <div class="endpoint-item vuln" data-bug="idor_invoice" data-path="/api/invoices/{id}">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/invoices/&#123;id&#125;</span>
+        <span class="ep-badge vuln-badge">IDOR</span>
+      </div>
+      <div class="endpoint-item vuln" data-bug="idor_proposal" data-path="/api/proposals/{id}">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/proposals/&#123;id&#125;</span>
+        <span class="ep-badge vuln-badge">IDOR</span>
+      </div>
+      <div class="endpoint-item" data-path="/api/messages/{id}">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/messages/&#123;id&#125;</span>
+        <span class="ep-badge">Auth</span>
+      </div>
+
+      <div class="ep-group-label">Platform</div>
+      <div class="endpoint-item vuln" data-bug="privesc_platform_config" data-path="/api/platform/config">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/platform/config</span>
+        <span class="ep-badge vuln-badge">Privesc</span>
+      </div>
+      <div class="endpoint-item vuln" data-bug="privesc_all_earnings" data-path="/api/platform/earnings">
+        <span class="ep-method get">GET</span>
+        <span class="ep-path">/api/platform/earnings</span>
+        <span class="ep-badge vuln-badge">Privesc</span>
+      </div>
+      <div class="endpoint-item vuln" data-bug="privesc_flag_contractor" data-path="/api/contractors/{id}/flag">
+        <span class="ep-method post">POST</span>
+        <span class="ep-path">/api/contractors/&#123;id&#125;/flag</span>
+        <span class="ep-badge vuln-badge">Privesc</span>
+      </div>
+    </div>
+  </aside>
+
+  <section class="panel panel-center">
+    <div class="panel-header">
+      <span class="panel-title">Live Audit Feed</span>
+      <span class="panel-subtitle" id="agent-label">AI Agent: IDOR Hunter · Qwen3-4B</span>
+    </div>
+    <div class="terminal" id="terminal">
+      <div class="terminal-banner">
+        <span class="tb-dot red"></span><span class="tb-dot yellow"></span><span class="tb-dot green"></span>
+        <span class="tb-title">idor-hunt-agent — FreelanceHub target</span>
+      </div>
+      <div class="terminal-body" id="terminal-body">
+        <div class="term-line dim">$ Waiting for agent to connect...</div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel panel-right">
+    <div class="panel-header">
+      <span class="panel-title">Scoring Board</span>
+      <span class="panel-subtitle">Real-time evaluation</span>
+    </div>
+
+    <div class="score-metrics">
+      <div class="metric-row">
+        <span class="metric-label">Precision</span>
+        <div class="metric-bar-wrap">
+          <div class="metric-bar" id="bar-precision"></div>
+        </div>
+        <span class="metric-value" id="val-precision">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Recall</span>
+        <div class="metric-bar-wrap">
+          <div class="metric-bar recall" id="bar-recall"></div>
+        </div>
+        <span class="metric-value" id="val-recall">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">F1</span>
+        <div class="metric-bar-wrap">
+          <div class="metric-bar f1" id="bar-f1"></div>
+        </div>
+        <span class="metric-value" id="val-f1">—</span>
+      </div>
+    </div>
+
+    <div class="bugs-section">
+      <div class="section-label">Vulnerabilities <span id="bug-fraction">0 / 7</span></div>
+      <div class="bug-list" id="bug-list">
+        <div class="bug-item" id="bi-idor_contractor_profile">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Contractor Profile IDOR</span>
+            <span class="bi-type">IDOR · High</span>
+          </div>
+        </div>
+        <div class="bug-item" id="bi-idor_project_brief">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Project Brief IDOR</span>
+            <span class="bi-type">IDOR · High</span>
+          </div>
+        </div>
+        <div class="bug-item" id="bi-idor_invoice">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Invoice IDOR</span>
+            <span class="bi-type">IDOR · High</span>
+          </div>
+        </div>
+        <div class="bug-item" id="bi-idor_proposal">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Proposal IDOR</span>
+            <span class="bi-type">IDOR · Medium</span>
+          </div>
+        </div>
+        <div class="bug-item" id="bi-privesc_platform_config">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Platform Config Privesc</span>
+            <span class="bi-type">Privesc · Critical</span>
+          </div>
+        </div>
+        <div class="bug-item" id="bi-privesc_all_earnings">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Earnings Dump Privesc</span>
+            <span class="bi-type">Privesc · High</span>
+          </div>
+        </div>
+        <div class="bug-item" id="bi-privesc_flag_contractor">
+          <span class="bi-icon">○</span>
+          <div class="bi-info">
+            <span class="bi-name">Flag Contractor Privesc</span>
+            <span class="bi-type">Privesc · Medium</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fps-section">
+      <div class="section-label">False Positives <span id="fp-fraction">0 / 3</span></div>
+      <div class="fp-list">
+        <div class="fp-item" id="fpi-fp_skills">
+          <span class="fpi-icon">○</span>
+          <span class="fpi-name">/api/skills</span>
+          <span class="fpi-tag">Public</span>
+        </div>
+        <div class="fp-item" id="fpi-fp_browse_projects">
+          <span class="fpi-icon">○</span>
+          <span class="fpi-name">/api/browse/projects</span>
+          <span class="fpi-tag">Public</span>
+        </div>
+        <div class="fp-item" id="fpi-fp_platform_stats">
+          <span class="fpi-icon">○</span>
+          <span class="fpi-name">/api/platform/stats</span>
+          <span class="fpi-tag">Aggregate</span>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+</main>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

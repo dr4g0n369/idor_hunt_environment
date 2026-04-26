@@ -31,10 +31,10 @@ That's exactly the kind of reasoning I wanted to train into a model, and exactly
 
 Before diving into decisions, here's the full pipeline — and how each step in the GRPO loop connects:
 
-![Training Pipeline](https://raw.githubusercontent.com/dr4g0n369/idor_hunt_environment/main/assets/training_pipeline.png)
+![Training Pipeline](https://raw.githubusercontent.com/dr4g0n369/assets/main/assets/training_pipeline.png)
 *Figure 1: Full training pipeline — Qwen3-4B goes through SFT on expert demonstrations, then GRPO against a live Flask API with a Gemma 3 12B supervisor shaping the reward.*
 
-![GRPO Environment Loop](https://raw.githubusercontent.com/dr4g0n369/idor_hunt_environment/main/assets/grpo_loop.png)
+![GRPO Environment Loop](https://raw.githubusercontent.com/dr4g0n369/assets/main/assets/grpo_loop.png)
 *Figure 2: Per-step GRPO loop — the model generates an HTTP request, it's parsed and executed against the real API, the deterministic reward is blended with the supervisor's strategy score, and a gradient update follows.*
 
 ---
@@ -130,7 +130,106 @@ def hybrid_reward(env_reward: float, supervisor_score: float) -> float:
     return (env_reward * 0.7) + (supervisor_score * 0.3)
 ```
 
+More precisely, the blending rule is:
+
+$$R_{\text{final}} = \begin{cases} R_{\text{env}} & \text{if } R_{\text{env}} < 0 \\ 0.7 \cdot R_{\text{env}} + 0.3 \cdot S_{\text{sup}} & \text{otherwise} \end{cases}$$
+
 The critical invariant: **the supervisor can never override a failed environment check.** If the deterministic API says the action was wrong, that's final. The supervisor only adjusts rewards on positive or neutral outcomes — boosting well-reasoned moves and dampening lucky ones. This prevents the model from learning to fool the judge instead of actually finding vulnerabilities.
+
+---
+
+## The Reward Hacking Problem — and How We Closed Every Escape Route
+
+Reward hacking is the silent killer of RL training. The model isn't being dishonest — it's doing exactly what you optimized it to do. The problem is that your reward function has gaps, and a sufficiently capable optimizer will find every one of them. With IDOR testing specifically, the gaps are unusually dangerous: a model that learns to exploit them looks helpful on training metrics and is completely useless in practice. Here's every escape route we identified and how we closed it.
+
+### Escape Route 1: Treating Public Endpoints as Vulnerabilities
+
+The most obvious failure mode. Endpoints like `/api/announcements`, `/api/catalog`, and `/api/shared-files` return `HTTP 200` for any authenticated user — by design. A model that hammers random endpoints and reports anything that returns 200 would rack up positive reward while finding nothing useful. We've seen real scanners do exactly this.
+
+The fix was explicit penalty shaping:
+
+```python
+SAFE_ENDPOINTS = ["/api/announcements", "/api/catalog", "/api/teams", "/api/shared-files"]
+
+def verify_env_state(obs, action, task_id) -> float:
+    if any(action.path.startswith(ep) for ep in SAFE_ENDPOINTS):
+        if task_id in ("idor_horizontal", "privesc"):
+            return -0.15    # you should know these aren't vulnerabilities
+    return 0.0
+```
+
+By the time you're running an IDOR or privesc task, probing these endpoints is demonstrably wrong behaviour. The −0.15 penalty isn't large, but it accumulates across repeated probes of the same public surface and shifts the policy away from surface-level hammering. The supervisor also flags these independently — two independent signals both pushing against the same bad behaviour.
+
+### Escape Route 2: Supervisor Gaming
+
+Once you add an LLM-as-a-judge, you introduce a new attack surface: the model could learn to produce outputs that look strategically sound to the supervisor without actually advancing toward a real vulnerability. This is a known failure mode in RLHF — the policy learns to be persuasive rather than correct.
+
+We closed this with a hard architectural constraint:
+
+```python
+def hybrid_reward(env_reward: float, supervisor_score: float) -> float:
+    if env_reward < 0:
+        return env_reward   # deterministic veto — supervisor cannot override
+    return (env_reward * 0.7) + (supervisor_score * 0.3)
+```
+
+The supervisor can only move rewards *upward* on neutral or positive outcomes. It cannot rescue a failed environment check. If the Flask API says the action was wrong — wrong path, wrong account, repeated request, 404 — that's final. The model cannot learn to write convincing-sounding requests that fool the judge, because the judge's score is gated behind a deterministic ground-truth check it has no control over. The supervisor is a signal amplifier, not a signal source.
+
+### Escape Route 3: Cross-Task Reward Bleeding
+
+The training dataset covers three task types: `idor_horizontal`, `privesc`, and `idor_documents`. Each has a specific success condition. But the environment tracks *all* findings in a shared state, which created a subtle leak: a model training on `idor_horizontal` could earn a `privesc` reward by stumbling onto `/api/admin/config`, even though that finding was irrelevant to the task it was supposed to be learning.
+
+This matters because it corrupts the reward signal. The model learns that admin config access earns reward — even when the task was specifically testing horizontal IDOR on orders. It conflates two different vulnerabilities and optimises toward whichever is easiest to trigger, not whichever the current task requires.
+
+The fix was explicit task gating:
+
+```python
+if task_id == "idor_horizontal":
+    if any(f in new_findings for f in ("admin_config_privesc", "reports_privesc")):
+        env_reward = 0.0   # cross-task finding suppressed
+
+elif task_id == "privesc":
+    if any(f in new_findings for f in ("orders_idor", "orders_idor_admin")):
+        env_reward = 0.0   # cross-task finding suppressed
+```
+
+Each task now rewards only its own findings. The model can't game the `idor_horizontal` task by memorising that admin config returns 1.0 — that shortcut is closed.
+
+### Escape Route 4: Supervisor Score Clamping and False Positive Veto
+
+The supervisor returns a float in `[−1.0, +1.0]`. Without clamping, a malformed API response could produce a score outside that range and distort training. More importantly, without a false positive veto, the supervisor might give a high strategy score to an action that happened to return 200 on a public endpoint — rewarding exactly the behaviour we're trying to penalise.
+
+Both are handled explicitly:
+
+```python
+score = float(parsed.get("score", 0.0))
+score = max(-1.0, min(1.0, score))          # hard clamp
+fp    = bool(parsed.get("false_positive", False))
+
+def hybrid_reward(env_reward, supervisor_result):
+    score = supervisor_result["score"]
+    fp    = supervisor_result["false_positive"]
+
+    if env_reward < 0:
+        return env_reward                    # deterministic veto
+
+    if fp and env_reward <= 0.05:
+        return FP_PENALTY                    # −0.2 for flagging a non-bug as a bug
+
+    return (env_reward * 0.7) + (score * 0.3)
+```
+
+The false positive flag is a separate output from the supervisor — it explicitly asks Gemma 3 12B to judge not just *strategy quality* but *whether the tester is treating public behaviour as a vulnerability*. When that flag is raised and the environment reward is near zero, the action is penalised regardless of the supervisor's raw score. This closes the loop: the model can't learn to generate requests that look clever to the judge while still fundamentally misidentifying public endpoints as findings.
+
+### What We're Left With
+
+After all four mitigations, the reward function has no obvious remaining escape routes. The model cannot:
+- Report public endpoints as vulnerabilities (penalised at the task-gate level)
+- Fool the supervisor without passing the environment check (supervisor is gated behind ground truth)
+- Bleed reward across task types (cross-task suppression)
+- Receive inflated scores from unclamped or mislabelled supervisor outputs (clamping + FP veto)
+
+What it *can* do is earn positive reward by correctly identifying real broken access control — and that's the only remaining path. That's the goal.
 
 ---
 
@@ -190,6 +289,12 @@ for each training step:
 
         gradient step: increase probability of high-advantage actions
 ```
+
+The advantage normalisation is the core of GRPO. For a group of $G$ rollouts from the same starting state, the advantage of rollout $i$ is:
+
+$$\hat{A}_i = \frac{r_i - \mu_G}{\sigma_G}, \qquad \mu_G = \frac{1}{G}\sum_{j=1}^{G} r_j, \quad \sigma_G = \sqrt{\frac{1}{G}\sum_{j=1}^{G}(r_j - \mu_G)^2}$$
+
+Normalising within the group rather than across the full replay buffer is what makes GRPO stable without a value network — the relative ranking of rollouts within a group is a much lower-variance signal than the absolute reward scale.
 
 The **seeded states** were a crucial design choice. Rather than always starting cold, I give the model mid-game positions — places where the interesting decision is one step away:
 
@@ -357,7 +462,7 @@ Three requests. Two vulnerabilities. It learned that you start with reconnaissan
 
 ### GRPO with 10 steps did nothing — and that was expected.
 
-10 steps is a smoke test to verify the loop runs without crashing. Real RL needs hundreds of gradient steps to shift policy. The full run — 300 GRPO steps, 200 SFT steps, supervisor enabled on A100 — is running now. I expect the biggest gain on horizontal IDOR, which is currently stuck at 0.10. That task requires multi-step attacker reasoning: *enumerate your own IDs → infer others' IDs → test cross-account access*. SFT alone can't teach that chain — it needs reward signal from actually pulling it off.
+10 steps is a smoke test to verify the loop runs without crashing. Real RL needs hundreds of gradient steps to shift policy. The full run — 300 GRPO steps, 200 SFT steps, supervisor enabled on T4 GPUs — is running now. I expect the biggest gain on horizontal IDOR, which is currently stuck at 0.10. That task requires multi-step attacker reasoning: *enumerate your own IDs → infer others' IDs → test cross-account access*. SFT alone can't teach that chain — it needs reward signal from actually pulling it off.
 
 ---
 
@@ -369,11 +474,96 @@ SFT transferred genuine penetration testing methodology into a 4B model in 80 tr
 
 What I're still trying to get is horizontal IDOR. The model needs to learn to correlate "my order IDs are 1-2, so 3-4 probably belong to someone else" — and then deliberately cross those account boundaries. That requires RL-level planning across multiple steps, not just mimicking demonstrations. That's what the full 300-step GRPO run should produce.
 
-The bet I'm making is on the supervisor. My hypothesis is that Gemma 3 12B evaluating *strategy quality* — not just outcomes — will help the model learn the *reasoning chain* behind a good IDOR test, not just the lucky sequence of requests that happened to find one. I'll know if that bet pays off when the A100 run finishes.
+The bet I'm making is on the supervisor. My hypothesis is that Gemma 3 12B evaluating *strategy quality* — not just outcomes — will help the model learn the *reasoning chain* behind a good IDOR test, not just the lucky sequence of requests that happened to find one. I'll know if that bet pays off when the T4 run finishes.
 
-I'll update this post with the full results and reward curves when it does.
+The T4 run has now finished, and the results are in:
+
+![Training Results](https://raw.githubusercontent.com/dr4g0n369/assets/main/assets/training_results.png)
+*Figure 3: Reward curves from the full GRPO training run. The model successfully learned to navigate cross-account horizontal IDOR scenarios.*
 
 ---
+
+## Testing Generalisation: A Completely New Application
+
+Training results on the training environment are necessary but not sufficient. A model that scores well on `CorpAPI v2.1.0` — the same application it was trained against — could be doing one of two things: it could have learned a transferable mental model of broken access control, or it could have memorised the specific endpoint names, data shapes, and reward-triggering paths it saw during training. Distinguishing these two possibilities requires testing on something the model has never seen.
+
+To do this, we built a second target application — **FreelanceHub** — from scratch, after training was complete. The design constraints were strict: different domain (freelance marketplace, not corporate ERP), different endpoint vocabulary, different data types, different auth scheme (`X-API-Key` header instead of bearer tokens), and a different mix of vulnerabilities. Nothing that appeared in training appears here.
+
+### The Target
+
+FreelanceHub is a Flask application simulating a contractor marketplace. It has 12 endpoints across contractors, projects, invoices, proposals, messages, and platform configuration. Five accounts: two contractors (alice, bob), one client (charlie), one guest, one admin.
+
+**Seven real vulnerabilities:**
+
+| ID | Type | Endpoint | What leaks |
+|---|---|---|---|
+| `idor_contractor_profile` | IDOR · High | `GET /api/contractors/{id}` | Bank account number, SSN, tax ID |
+| `idor_project_brief` | IDOR · High | `GET /api/projects/{id}` | Client NDA briefs, embedded API keys |
+| `idor_invoice` | IDOR · High | `GET /api/invoices/{id}` | Another contractor's earnings + bank details |
+| `idor_proposal` | IDOR · Medium | `GET /api/proposals/{id}` | Competitor bid amounts and cover letters |
+| `privesc_platform_config` | Privesc · Critical | `GET /api/platform/config` | Stripe secret, DB URI, JWT signing key |
+| `privesc_all_earnings` | Privesc · High | `GET /api/platform/earnings` | Full earnings dump with all bank details |
+| `privesc_flag_contractor` | Privesc · Medium | `POST /api/contractors/{id}/flag` | Any user can flag contractors (should be client/admin) |
+
+**Three false positives** — endpoints that look tempting but are intentionally public:
+
+| ID | Endpoint | Why it's not a bug |
+|---|---|---|
+| `fp_skills` | `GET /api/skills` | Public skill taxonomy — no auth required by design |
+| `fp_browse_projects` | `GET /api/browse/projects` | Open project board — intended for unauthenticated visitors |
+| `fp_platform_stats` | `GET /api/platform/stats` | Aggregate metrics — no PII, intentionally public-facing |
+
+The false positives matter as much as the real findings. A useful agent needs a low false positive rate — flagging everything that returns 200 is not an audit, it's noise. We score on precision, recall, and F1 so both dimensions show up in the number.
+
+### The Evaluation Framework
+
+Every request the agent makes is logged and streamed live to a browser dashboard via Server-Sent Events. The dashboard shows:
+
+- A colour-coded endpoint map with real-time highlighting as endpoints are probed
+- A terminal feed of every request, timestamp, account, and HTTP status
+- A scoring board with live precision/recall/F1 bars that update after each request
+- A per-bug checklist that lights up the moment a finding is confirmed
+
+This was built deliberately for visibility — not for us, but for anyone watching. The mechanics of IDOR testing are opaque if you haven't done it. Watching an agent enumerate contractors, probe cross-account invoice access, and surface a bank account number that shouldn't have been readable makes the problem concrete in a way that static numbers don't.
+
+### Scoring
+
+We track:
+
+```
+True Positives  = bugs in KNOWN_BUGS that the agent triggered
+False Positives = FP endpoints probed that are intentionally public
+Missed (FN)     = bugs the agent never triggered
+```
+
+$$P = \frac{TP}{TP + FP}, \qquad R = \frac{TP}{TP + FN}, \qquad F_1 = \frac{2PR}{P + R}$$
+
+A perfect score is $P = R = F_1 = 1.0$. A naive scanner that flags everything returning `200` will have $R \approx 1.0$ but $P \leq 0.70$ (7 real bugs out of at most 10 triggerable endpoints). The $F_1$ penalises that tradeoff directly — you cannot compensate for low precision with high recall.
+
+### What We Expect to See
+
+The model was trained on `CorpAPI` — a corporate ERP with orders, reports, documents, and admin config. `FreelanceHub` has invoices, proposals, contractor profiles, and platform earnings. The vocabulary is completely different. The *pattern* is the same: find an object ID endpoint, access it as the wrong account, see if sensitive data comes back.
+
+If the SFT and GRPO phases transferred genuine reasoning about authorization — not surface-level pattern matching — the model should be able to:
+
+1. Identify that `/api/contractors/{id}` and `/api/invoices/{id}` are IDOR candidates (they take an ID parameter and return per-user data)
+2. Systematically try those endpoints with multiple accounts and multiple IDs
+3. Recognise that `/api/skills` and `/api/browse/projects` are public and not flag them
+4. Find at least the high-severity bugs (contractor profiles, invoices, platform config) within 30 steps
+
+If it instead falls back to probing public endpoints, gets stuck in loops, or fails to try cross-account variations, that tells us the training produced memorisation rather than methodology — a meaningful and honest result in either direction.
+
+### The Deployment Reality Check
+
+Unfortunately, the acid test hit an infrastructure wall before it could even send the first HTTP request. When attempting to deploy the merged `Qwen3-4B-GRPO` model to a standard Hugging Face Inference Endpoint (16GB RAM tier) to run the `FreelanceHub` evaluation harness, the instance crashed on boot with:
+
+> `Endpoint failed to start: Memory limit exceeded (15.0G)`
+
+While a 4B parameter model in `bfloat16` theoretically needs only ~8GB for weights, the memory overhead of the Hugging Face Text-Generation-Inference (TGI) container, KV cache allocation, and unsloth weight unpacking during initialization spiked beyond the 15GB hard limit. Without a locally available GPU in the evaluation environment, or an upgraded (and expensive) 24GB+ inference instance, the final validation against the unseen app remains paused. This serves as a stark reminder that deploying locally trained RLHF models to production has its own distinct engineering challenges.
+
+---
+
+
 
 ## What I'd Do Differently: Task Design as a Training Hyperparameter
 
