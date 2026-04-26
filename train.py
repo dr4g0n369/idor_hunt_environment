@@ -129,16 +129,16 @@ def build_seeded_states():
             "hint": "Try manager/admin routes as lower-privileged users.",
         },
         {
-            "task": "full_audit",
-            "pre_actions": [("GET", "/api/announcements", None, "guest")],
-            "obs": '[{"id":2,"title":"Q4 All-Hands Meeting Scheduled","pinned":1}]',
-            "hint": "Announcements are intentionally shared; prioritize ownership and role-based checks.",
+            "task": "idor_documents",
+            "pre_actions": [("GET", "/api/documents", None, "alice")],
+            "obs": '[{"id":3,"title":"Code Review Checklist","classification":"internal"}]',
+            "hint": "Alice owns document 3. Try accessing /api/documents/1 or /api/documents/4 as alice — these belong to other users.",
         },
         {
-            "task": "full_audit",
-            "pre_actions": [("GET", "/api/catalog", None, "alice")],
-            "obs": '[{"id":1,"name":"Laptop Pro X1","price":1299.99}]',
-            "hint": "Catalog is shared data and not a vulnerability by itself.",
+            "task": "access_control_coverage",
+            "pre_actions": [("GET", "/api/announcements", None, "guest")],
+            "obs": '[{"id":2,"title":"Q4 All-Hands Meeting Scheduled","pinned":1}]',
+            "hint": "Announcements are intentionally shared. Focus on /api/orders/<id>, /api/documents/<id>, /api/reports, and /api/admin/config.",
         },
     ]
 
@@ -155,7 +155,7 @@ def run_env_smoke_test():
     env = IdorHuntEnvironment()
     try:
         print("== Env smoke test ==")
-        obs = env.reset(task_id="full_audit")
+        obs = env.reset(task_id="access_control_coverage")
         print("reset:", obs.status_code)
         for action in [
             Action("GET", "/api/orders/3", account="alice"),
@@ -176,7 +176,7 @@ def run_env_smoke_test():
 
 
 def run_episode(model, tokenizer, system_prompt: str, task_id: str, device: str) -> float:
-    max_steps = {"idor_horizontal": 15, "privesc": 20, "full_audit": 30}[task_id]
+    max_steps = {"idor_horizontal": 15, "idor_documents": 15, "privesc": 20, "access_control_coverage": 30}[task_id]
     env = IdorHuntEnvironment()
     try:
         obs = env.reset(task_id=task_id)
@@ -367,7 +367,7 @@ No explanation; output only the request line.\
 
     FastLanguageModel.for_inference(model)
     results = {}
-    for task in ("idor_horizontal", "privesc", "full_audit"):
+    for task in ("idor_horizontal", "idor_documents", "privesc", "access_control_coverage"):
         grades = []
         for _ in range(args.eval_episodes):
             grades.append(run_episode(model, tokenizer, system_prompt, task, device))

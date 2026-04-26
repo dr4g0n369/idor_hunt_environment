@@ -75,7 +75,7 @@ SUPERVISOR_ENABLED = True
 SUPERVISOR_CACHE = {}
 
 SUPERVISOR_SYSTEM_PROMPT = """\
-You are a senior penetration testing supervisor reviewing a junior tester's actions.
+You are a senior penetration testing supervisor reviewing a junior tester's actions against a corporate API.
 You will be given:
 - The task description (what the tester is trying to find)
 - The tester's HTTP request (method, path, account used)
@@ -86,18 +86,20 @@ Evaluate the tester's action on these criteria:
 1. RELEVANCE: Is this request useful for discovering the target vulnerability class?
 2. STRATEGY: Does the request show good security testing methodology?
 3. EFFICIENCY: Is the tester wasting steps on obviously public/safe endpoints?
-4. STEALTH: Would this request look suspicious to a WAF or blue team?
-5. PROGRESS: Does this request advance toward finding a real vulnerability?
+4. PROGRESS: Does this request advance toward finding a real vulnerability?
+5. FALSE POSITIVE CHECK: If the request returned 200 with data, is this actually a vulnerability or is the endpoint intentionally public? Endpoints like /api/announcements, /api/catalog, /api/shared-files, /api/teams, /api/tickets, and /api/activity are designed to be accessible to all authenticated users — accessing them is NOT a vulnerability. A real IDOR or privesc requires accessing data that belongs to another user or a higher privilege level and is NOT meant to be shared.
 
-Output ONLY a JSON object with two keys:
+Output ONLY a JSON object with three keys:
 - "score": a float between -1.0 and 1.0
+- "false_positive": true if the tester is treating a public/shared endpoint as a vulnerability, false otherwise
 - "reasoning": a one-sentence explanation
 
-Example output:
-{"score": 0.6, "reasoning": "Good cross-account access test on a private endpoint."}
+Example outputs:
+{"score": 0.7, "false_positive": false, "reasoning": "Cross-account order access confirms IDOR — order belongs to a different user."}
+{"score": -0.5, "false_positive": true, "reasoning": "Announcements are company-wide public posts, not a privilege escalation."}
 
 Scoring guide:
--1.0 = Completely wrong approach (testing public endpoints, syntax errors)
+-1.0 = Completely wrong approach or clear false positive (testing public endpoints as if they were vulnerabilities)
  0.0 = Neutral (valid request but not advancing toward the goal)
 +1.0 = Excellent (directly tests for the target vulnerability with correct methodology)
 """
@@ -115,10 +117,10 @@ class _Action:
 
 def ask_gemma_supervisor(task_id, agent_output, parsed_action, env_obs, env_reward):
     if not SUPERVISOR_ENABLED or not HF_TOKEN:
-        return 0.0
+        return {"score": 0.0, "false_positive": False}
 
     if parsed_action is None:
-        return -0.5
+        return {"score": -0.5, "false_positive": False}
 
     cache_key = f"{task_id}|{parsed_action.method}|{parsed_action.path}|{parsed_action.account}|{env_obs.status_code}"
     if cache_key in SUPERVISOR_CACHE:
@@ -136,6 +138,7 @@ def ask_gemma_supervisor(task_id, agent_output, parsed_action, env_obs, env_rewa
         f"\nEvaluate this action."
     )
 
+    result = {"score": 0.0, "false_positive": False}
     try:
         resp = _requests.post(
             SUPERVISOR_API_URL,
@@ -158,23 +161,31 @@ def ask_gemma_supervisor(task_id, agent_output, parsed_action, env_obs, env_rewa
             parsed = json.loads(json_match.group())
             score = float(parsed.get("score", 0.0))
             score = max(-1.0, min(1.0, score))
+            fp = bool(parsed.get("false_positive", False))
             reasoning = parsed.get("reasoning", "")
-            print(f"    [SUPERVISOR] score={score:+.2f} | {reasoning}")
+            result = {"score": score, "false_positive": fp}
+            fp_tag = " [FP]" if fp else ""
+            print(f"    [SUPERVISOR] score={score:+.2f}{fp_tag} | {reasoning}")
         else:
-            score = 0.0
             print(f"    [SUPERVISOR] Could not parse JSON from: {content[:100]}")
     except Exception as e:
-        score = 0.0
         print(f"    [SUPERVISOR] API error (fallback to 0.0): {e}")
 
-    SUPERVISOR_CACHE[cache_key] = score
-    return score
+    SUPERVISOR_CACHE[cache_key] = result
+    return result
 
 
-def hybrid_reward(env_reward, supervisor_score):
+FP_PENALTY = -0.2
+
+
+def hybrid_reward(env_reward, supervisor_result):
+    score = supervisor_result["score"]
+    fp = supervisor_result["false_positive"]
     if env_reward < 0:
         return env_reward
-    return (env_reward * 0.7) + (supervisor_score * 0.3)
+    if fp and env_reward <= 0.05:
+        return FP_PENALTY
+    return (env_reward * 0.7) + (score * 0.3)
 
 
 def verify_env_state(obs, action, task_id):
@@ -219,21 +230,33 @@ print(f"Admin config as guest: status={obs.status_code} reward={obs.reward} done
 print(f"Grade: {env2.get_grade()}")
 env2.close()
 
-print("\n=== Testing full_audit ===")
+print("\n=== Testing idor_documents ===")
 env3 = IdorHuntEnvironment()
-obs = env3.reset(task_id="full_audit")
-obs = env3.step(_Action("GET", "/api/orders/3", account="alice"))
-print(f"Orders IDOR: status={obs.status_code} reward={obs.reward}")
-obs = env3.step(_Action("GET", "/api/reports", account="bob"))
-print(f"Reports privesc: status={obs.status_code} reward={obs.reward}")
-obs = env3.step(_Action("GET", "/api/admin/config", account="alice"))
-print(f"Admin config privesc: status={obs.status_code} reward={obs.reward} done={obs.done}")
+obs = env3.reset(task_id="idor_documents")
+obs = env3.step(_Action("GET", "/api/documents/3", account="bob"))
+print(f"Bob reads Alice's doc 3 (internal): status={obs.status_code} reward={obs.reward}")
+obs = env3.step(_Action("GET", "/api/documents/1", account="alice"))
+print(f"Alice reads admin's doc 1 (confidential): status={obs.status_code} reward={obs.reward} done={obs.done}")
 print(f"Grade: {env3.get_grade()}")
 env3.close()
 
+print("\n=== Testing access_control_coverage ===")
+env3b = IdorHuntEnvironment()
+obs = env3b.reset(task_id="access_control_coverage")
+obs = env3b.step(_Action("GET", "/api/orders/3", account="alice"))
+print(f"Orders IDOR: status={obs.status_code} reward={obs.reward}")
+obs = env3b.step(_Action("GET", "/api/documents/1", account="bob"))
+print(f"Docs IDOR (confidential): status={obs.status_code} reward={obs.reward}")
+obs = env3b.step(_Action("GET", "/api/reports", account="bob"))
+print(f"Reports privesc: status={obs.status_code} reward={obs.reward}")
+obs = env3b.step(_Action("GET", "/api/admin/config", account="alice"))
+print(f"Admin config privesc: status={obs.status_code} reward={obs.reward} done={obs.done}")
+print(f"Grade: {env3b.get_grade()}")
+env3b.close()
+
 print("\n=== Testing false positives (should yield low/no reward) ===")
 env4 = IdorHuntEnvironment()
-obs = env4.reset(task_id="full_audit")
+obs = env4.reset(task_id="access_control_coverage")
 obs = env4.step(_Action("GET", "/api/announcements", account="alice"))
 print(f"Announcements (public, not a vuln): status={obs.status_code} reward={obs.reward}")
 obs = env4.step(_Action("GET", "/api/announcements/1", account="guest"))
@@ -370,37 +393,70 @@ SEEDED_STATES = [
         "hint": "Catalog and team directory are public by design — not privilege escalation. Try /api/reports or /api/admin/config as guest instead.",
     },
     {
-        "task": "full_audit",
+        "task": "idor_documents",
         "pre_actions": [],
         "obs": _reset_obs(
-            "Perform a full access control audit of this corporate API. "
-            "Find all broken access control vulnerabilities: "
-            "horizontal IDOR (accessing other users' resources) and "
-            "vertical privilege escalation (accessing higher-role endpoints). "
-            "Test systematically across all accounts and endpoints."
+            "Test the /api/documents endpoints for IDOR vulnerabilities. "
+            "Check if authenticated users can read documents belonging to other users by manipulating document IDs. "
+            "Pay attention to document ownership and classification — confidential documents accessed cross-account are higher severity."
         ),
-        "hint": "Test all endpoints with different accounts. Some endpoints (announcements, catalog, teams, shared-files, activity) are intentionally accessible — focus on orders, reports, and admin endpoints.",
+        "hint": "Start by listing your own documents with /api/documents, then try accessing other document IDs. Documents 1 and 5 belong to admin and are classified as confidential.",
     },
     {
-        "task": "full_audit",
+        "task": "idor_documents",
+        "pre_actions": [("GET", "/api/documents", None, "alice")],
+        "obs": '[{"id":3,"title":"Code Review Checklist","classification":"internal"}]',
+        "hint": "Alice owns document 3. Try accessing /api/documents/1 or /api/documents/4 as alice — these belong to other users.",
+    },
+    {
+        "task": "idor_documents",
+        "pre_actions": [
+            ("GET", "/api/users", None, "bob"),
+            ("GET", "/api/documents", None, "bob"),
+        ],
+        "obs": '[{"id":4,"title":"Sales Playbook 2024","classification":"internal"}]',
+        "hint": "Bob owns document 4. Try accessing /api/documents/1 as bob — it belongs to admin and is classified as confidential.",
+    },
+    {
+        "task": "idor_documents",
+        "pre_actions": [
+            ("GET", "/api/documents", None, "alice"),
+            ("GET", "/api/documents/4", None, "alice"),
+        ],
+        "obs": '{"id":4,"user_id":4,"title":"Sales Playbook 2024","content":"Key accounts: Acme Corp ($500K), Globex Inc ($320K), Initech ($180K). Renewal dates in Q1.","classification":"internal"}',
+        "hint": "IDOR confirmed! Alice accessed Bob's document. Now try accessing confidential documents — /api/documents/1 or /api/documents/5 belong to admin and are classified confidential.",
+    },
+    {
+        "task": "access_control_coverage",
+        "pre_actions": [],
+        "obs": _reset_obs(
+            "Systematically map and test access controls across all API endpoints. "
+            "For each endpoint, determine what authentication and authorization is enforced. "
+            "Identify any endpoints where access control is missing or misconfigured. "
+            "Test with multiple account roles to verify enforcement at each privilege level."
+        ),
+        "hint": "Test all endpoints with different accounts. Some endpoints (announcements, catalog, teams, shared-files, activity) are intentionally accessible — focus on orders, documents, reports, and admin endpoints.",
+    },
+    {
+        "task": "access_control_coverage",
         "pre_actions": [
             ("GET", "/api/users", None, "alice"),
             ("GET", "/api/orders", None, "alice"),
         ],
         "obs": '[{"id":1,"product":"Laptop Pro X1","amount":1299.99,"status":"shipped"},{"id":2,"product":"USB-C Hub","amount":49.99,"status":"delivered"}]',
-        "hint": "Alice's orders are 1-2. Try accessing other order IDs as alice, then test /api/reports and /api/admin/config with lower-privileged accounts.",
+        "hint": "Alice's orders are 1-2. Try accessing other order IDs as alice, then test documents, /api/reports, and /api/admin/config with lower-privileged accounts.",
     },
     {
-        "task": "full_audit",
+        "task": "access_control_coverage",
         "pre_actions": [
             ("GET", "/api/users", None, "alice"),
             ("GET", "/api/orders/3", None, "alice"),
         ],
         "obs": '{"id":3,"user_id":4,"product":"Monitor 4K UHD","amount":599.99,"status":"pending","shipping_address":"456 Oak Ave, Springfield"}',
-        "hint": "IDOR confirmed on orders! Alice accessed Bob's order. Now test for privilege escalation: try /api/reports as alice and /api/admin/config as guest.",
+        "hint": "IDOR confirmed on orders! Alice accessed Bob's order. Now test documents for IDOR (/api/documents/<id>) and privilege escalation (/api/reports as alice, /api/admin/config as guest).",
     },
     {
-        "task": "full_audit",
+        "task": "access_control_coverage",
         "pre_actions": [
             ("GET", "/api/users", None, "alice"),
             ("GET", "/api/activity", None, "alice"),
@@ -408,7 +464,7 @@ SEEDED_STATES = [
             ("GET", "/api/shared-files", None, "alice"),
         ],
         "obs": '[{"id":1,"filename":"employee_handbook_2024.pdf","shared_with":"everyone","uploader":"admin"},{"id":2,"filename":"engineering_onboarding.pdf","shared_with":"engineering","uploader":"manager1"}]',
-        "hint": "Shared files, activity logs, and tickets are working as intended — not vulnerabilities. Try /api/orders/<id> across accounts and /api/admin/config as a non-admin.",
+        "hint": "Shared files, activity logs, and tickets are working as intended — not vulnerabilities. Try /api/orders/<id> and /api/documents/<id> across accounts, and /api/admin/config as a non-admin.",
     },
 ]
 
@@ -504,14 +560,15 @@ def compute_reward(state_idx: int, completion) -> float:
             env.step(_Action(m, p, b, acct))
         action = parse_action(text)
         if action is None:
-            supervisor_score = ask_gemma_supervisor(state["task"], text, None, None, -0.3)
+            sup_result = ask_gemma_supervisor(state["task"], text, None, None, -0.3)
             entry = {
                 "call": _reward_call_count[0],
                 "task": state["task"],
                 "raw_output": text,
                 "parsed": None,
                 "reward": -0.3,
-                "supervisor_score": supervisor_score,
+                "supervisor_score": sup_result["score"],
+                "supervisor_fp": sup_result["false_positive"],
                 "reason": "parse_failed",
             }
             DEBUG_LOG.append(entry)
@@ -524,9 +581,10 @@ def compute_reward(state_idx: int, completion) -> float:
             return -0.3
         obs = env.step(action)
         env_reward = float(obs.reward)
-        supervisor_score = ask_gemma_supervisor(state["task"], text, action, obs, env_reward)
+        sup_result = ask_gemma_supervisor(state["task"], text, action, obs, env_reward)
         state_penalty = verify_env_state(obs, action, state["task"])
-        reward = hybrid_reward(env_reward, supervisor_score) + state_penalty
+        reward = hybrid_reward(env_reward, sup_result) + state_penalty
+        fp_tag = " FP!" if sup_result["false_positive"] else ""
         entry = {
             "call": _reward_call_count[0],
             "task": state["task"],
@@ -534,14 +592,15 @@ def compute_reward(state_idx: int, completion) -> float:
             "parsed": f"{action.method} {action.path} @{action.account}",
             "status": obs.status_code,
             "env_reward": env_reward,
-            "supervisor_score": supervisor_score,
+            "supervisor_score": sup_result["score"],
+            "supervisor_fp": sup_result["false_positive"],
             "state_penalty": state_penalty,
             "hybrid_reward": reward,
             "reward": reward,
             "done": obs.done,
         }
         DEBUG_LOG.append(entry)
-        print(f"  [DBG #{_reward_call_count[0]}] task={state['task']} | state_idx={state_idx} | {action.method} {action.path} @{action.account} | status={obs.status_code} | env_r={env_reward:+.3f} | sup={supervisor_score:+.2f} | penalty={state_penalty:+.2f} | final={reward:+.3f}")
+        print(f"  [DBG #{_reward_call_count[0]}] task={state['task']} | state_idx={state_idx} | {action.method} {action.path} @{action.account} | status={obs.status_code} | env_r={env_reward:+.3f} | sup={sup_result['score']:+.2f}{fp_tag} | penalty={state_penalty:+.2f} | final={reward:+.3f}")
         print(f"    Prompt sent:")
         print(f"    {prompt_str}")
         print(f"    Model output: {text}")
@@ -645,7 +704,7 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.m
 
 
 def run_episode(model, tokenizer, task_id: str, verbose: bool = True) -> float:
-    max_steps = {"idor_horizontal": 15, "privesc": 20, "full_audit": 30}[task_id]
+    max_steps = {"idor_horizontal": 15, "idor_documents": 15, "privesc": 20, "access_control_coverage": 30}[task_id]
     env = IdorHuntEnvironment()
     try:
         obs = env.reset(task_id=task_id)
@@ -744,7 +803,7 @@ def run_episode(model, tokenizer, task_id: str, verbose: bool = True) -> float:
 def evaluate(model, tokenizer, n: int = EVAL_EPISODES) -> dict:
     FastLanguageModel.for_inference(model)
     results = {}
-    for task_id in ("idor_horizontal", "privesc", "full_audit"):
+    for task_id in ("idor_horizontal", "idor_documents", "privesc", "access_control_coverage"):
         print(f"\n{'#'*80}")
         print(f"# TASK: {task_id}")
         print(f"{'#'*80}")
@@ -819,14 +878,16 @@ print(f"Post-SFT evaluation ({EVAL_EPISODES} episodes per task)...")
 post_sft = evaluate(model, tokenizer)
 print(f"\nPost-SFT: {post_sft}")
 
+TASK_DISPLAY_NAMES = {"idor_horizontal": "IDOR (Orders)", "idor_documents": "IDOR (Docs)", "privesc": "Privilege Escalation", "access_control_coverage": "Access Control"}
+
 print("\n" + "=" * 50)
 print("SFT IMPACT")
 print("=" * 50)
 tasks = list(baseline.keys())
-task_names = ["Horizontal IDOR", "Privilege Escalation", "Full Audit"]
 print(f"{'Task':<22} {'Before':>8} {'After SFT':>10} {'Delta':>8}")
 print("-" * 52)
-for task, name in zip(tasks, task_names):
+for task in tasks:
+    name = TASK_DISPLAY_NAMES.get(task, task)
     delta = post_sft[task] - baseline[task]
     sign = "+" if delta >= 0 else ""
     print(f"{name:<22} {baseline[task]:>8.3f} {post_sft[task]:>10.3f} {sign}{delta:>7.3f}")
@@ -937,6 +998,12 @@ if sup_entries:
     boosted = sum(1 for e, s in zip(env_rewards, sup_scores) if e > 0 and s > 0.5)
     print(f"Boosted (both positive, supervisor > 0.5): {boosted}")
 
+    fp_flagged = [d for d in sup_entries if d.get('supervisor_fp', False)]
+    print(f"\nFalse positives flagged by supervisor: {len(fp_flagged)}/{len(sup_entries)}")
+    if fp_flagged:
+        for d in fp_flagged[:10]:
+            print(f"  {d['parsed']} | task={d['task']} | env_r={d['env_reward']:+.3f} -> hybrid={d['hybrid_reward']:+.3f}")
+
     print(f"\nSupervisor cache hits: {len(SUPERVISOR_CACHE)} unique action-states cached")
 
     print(f"\nTop 10 highest-rated actions by supervisor:")
@@ -952,10 +1019,10 @@ print("\n" + "=" * 60)
 print("FULL PIPELINE SUMMARY: Base → SFT → GRPO")
 print("=" * 60)
 tasks = list(baseline.keys())
-task_names = ["Horizontal IDOR", "Privilege Escalation", "Full Audit"]
 print(f"{'Task':<22} {'Base':>8} {'SFT':>8} {'GRPO':>8} {'Total Δ':>8}")
 print("-" * 60)
-for task, name in zip(tasks, task_names):
+for task in tasks:
+    name = TASK_DISPLAY_NAMES.get(task, task)
     sft_val = post_sft.get(task, baseline[task])
     total_delta = final[task] - baseline[task]
     sign = "+" if total_delta >= 0 else ""

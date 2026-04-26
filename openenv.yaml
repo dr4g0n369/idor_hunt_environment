@@ -7,8 +7,14 @@ port: 8000
 
 tasks:
   - id: idor_horizontal
-    name: "Horizontal IDOR"
-    description: "Find horizontal IDOR vulnerabilities — access other users' resources at the same privilege level"
+    name: "Horizontal IDOR (Orders)"
+    description: "Find horizontal IDOR vulnerabilities — access other users' orders by manipulating order IDs"
+    difficulty: easy
+    max_steps: 15
+
+  - id: idor_documents
+    name: "Horizontal IDOR (Documents)"
+    description: "Find IDOR in the documents endpoint — access other users' documents, especially confidential ones"
     difficulty: easy
     max_steps: 15
 
@@ -18,8 +24,8 @@ tasks:
     difficulty: medium
     max_steps: 20
 
-  - id: full_audit
-    name: "Full Access Control Audit"
-    description: "Find all broken access control: horizontal IDOR and vertical privilege escalation across all endpoints"
+  - id: access_control_coverage
+    name: "Access Control Coverage"
+    description: "Systematically test access controls across all endpoints — find IDOR and privilege escalation vulnerabilities across the full API surface"
     difficulty: hard
     max_steps: 30

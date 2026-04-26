@@ -32,8 +32,9 @@ ACCOUNT_INFO = {
 
 MAX_STEPS = {
     "idor_horizontal": 15,
+    "idor_documents": 15,
     "privesc": 20,
-    "full_audit": 30,
+    "access_control_coverage": 30,
 }
 
 ENDPOINTS = [
@@ -67,17 +68,21 @@ TASK_DESCRIPTIONS = {
         "Check if authenticated users can access resources belonging to other users at the same privilege level. "
         "Try accessing other users' data through various endpoints."
     ),
+    "idor_documents": (
+        "Test the /api/documents endpoints for IDOR vulnerabilities. "
+        "Check if authenticated users can read documents belonging to other users by manipulating document IDs. "
+        "Pay attention to document ownership and classification — confidential documents accessed cross-account are higher severity."
+    ),
     "privesc": (
         "Test this corporate API for vertical privilege escalation. "
         "Check if lower-privileged users (user, guest) can access endpoints or data "
         "that should be restricted to higher roles (manager, admin)."
     ),
-    "full_audit": (
-        "Perform a full access control audit of this corporate API. "
-        "Find all broken access control vulnerabilities: "
-        "horizontal IDOR (accessing other users' resources) and "
-        "vertical privilege escalation (accessing higher-role endpoints). "
-        "Test systematically across all accounts and endpoints."
+    "access_control_coverage": (
+        "Systematically map and test access controls across all API endpoints. "
+        "For each endpoint, determine what authentication and authorization is enforced. "
+        "Identify any endpoints where access control is missing or misconfigured. "
+        "Test with multiple account roles to verify enforcement at each privilege level."
     ),
 }
 
@@ -258,7 +263,7 @@ class IdorHuntEnvironment(Environment):
             reward = 0.05
 
         elif path.startswith("/api/documents/") and status == 200:
-            reward = 0.02
+            reward = self._check_documents_idor(resp_body, account)
 
         elif path == "/api/reports" and status == 200:
             reward = self._check_reports_privesc(account_role)
@@ -323,6 +328,30 @@ class IdorHuntEnvironment(Environment):
             return 0.05
         return 0.02
 
+    def _check_documents_idor(self, resp_body, account):
+        try:
+            data = json.loads(resp_body)
+            owner_id = data.get("user_id")
+            classification = data.get("classification", "internal")
+            account_user_ids = {"alice": 3, "bob": 4, "manager1": 2, "guest": 5}
+            acting_uid = account_user_ids.get(account)
+            if owner_id and acting_uid and owner_id != acting_uid:
+                finding_key = f"docs_idor_{account}_accessed_{owner_id}"
+                if finding_key not in self.findings:
+                    self.findings.add(finding_key)
+                    self.findings.add("docs_idor")
+                    if classification == "confidential":
+                        self.findings.add("docs_idor_confidential")
+                        return 1.0
+                    return 0.5
+                return 0.02
+        except (json.JSONDecodeError, ValueError):
+            pass
+        if f"own_doc_read_{account}" not in self.findings:
+            self.findings.add(f"own_doc_read_{account}")
+            return 0.05
+        return 0.02
+
     def _check_admin_config_privesc(self, account_role):
         if account_role != "admin":
             if "admin_config_privesc" not in self.findings:
@@ -335,11 +364,15 @@ class IdorHuntEnvironment(Environment):
         if self.task_id == "idor_horizontal":
             if "orders_idor" in self.findings:
                 self.done = True
+        elif self.task_id == "idor_documents":
+            if "docs_idor" in self.findings:
+                self.done = True
         elif self.task_id == "privesc":
             if "reports_privesc" in self.findings and "admin_config_privesc" in self.findings:
                 self.done = True
-        elif self.task_id == "full_audit":
-            if all(k in self.findings for k in ("orders_idor", "reports_privesc", "admin_config_privesc")):
+        elif self.task_id == "access_control_coverage":
+            found = sum(1 for k in ("orders_idor", "docs_idor", "reports_privesc", "admin_config_privesc") if k in self.findings)
+            if found >= 3:
                 self.done = True
 
     def get_grade(self):
@@ -366,15 +399,28 @@ class IdorHuntEnvironment(Environment):
                 return 0.1
             return 0.01
 
-        if self.task_id == "full_audit":
-            vulns = [k for k in ("orders_idor", "reports_privesc", "admin_config_privesc") if k in self.findings]
-            count = len(vulns)
-            if count == 3:
+        if self.task_id == "idor_documents":
+            if "docs_idor_confidential" in self.findings:
                 return 0.99
-            if count == 2:
+            if "docs_idor" in self.findings:
                 return 0.7
+            if any(k.startswith("own_doc") for k in self.findings):
+                return 0.2
+            if "user_list" in self.findings:
+                return 0.1
+            return 0.01
+
+        if self.task_id == "access_control_coverage":
+            vulns = [k for k in ("orders_idor", "docs_idor", "reports_privesc", "admin_config_privesc") if k in self.findings]
+            count = len(vulns)
+            if count == 4:
+                return 0.99
+            if count == 3:
+                return 0.8
+            if count == 2:
+                return 0.6
             if count == 1:
-                return 0.4
+                return 0.35
             if any(k.startswith("own_") for k in self.findings):
                 return 0.15
             if "user_list" in self.findings:

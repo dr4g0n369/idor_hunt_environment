@@ -776,8 +776,8 @@ def create_app(db_path):
             return err
         db = get_db()
         row = db.execute(
-            "SELECT id, user_id, title, content, classification FROM documents WHERE id = ? AND user_id = ?",
-            (doc_id, user["id"]),
+            "SELECT id, user_id, title, content, classification FROM documents WHERE id = ?",
+            (doc_id,),
         ).fetchone()
         if not row:
             return jsonify({"error": "Document not found"}), 404
